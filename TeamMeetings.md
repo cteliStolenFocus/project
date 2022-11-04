@@ -8,7 +8,7 @@
 ## 2022/11/03
 - Setup slack channel for discussion
 - Met again to discuss potential applications
-- Three applications were discusses
+- Three applications were discussed
 - - ASL with image dataset
 - - Intelligent Video colorization
 - - Intelligent barcode scanner
