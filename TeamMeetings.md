@@ -7,4 +7,13 @@
 
 ## 2022/11/03
 - Setup slack channel for discussion
-- 
+- Met again to discuss potential applications
+- Three applications were discusses
+- - ASL with image dataset
+- - Intelligent Video colorization
+- - Intelligent barcode scanner
+- Plan is to prototype a bit more to identify best application and approach
+- Meeting scheduled for 11/6/2022 to finalize project and dataset
+
+## 2022/11/04
+- Created directories for prototyping for each teammate
