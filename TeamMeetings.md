@@ -17,3 +17,7 @@
 
 ## 2022/11/04
 - Created directories for prototyping for each teammate
+
+## 2022/11/06
+- Create Template for project report
+- Prototyped ASL character detection
