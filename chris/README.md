@@ -23,3 +23,6 @@ https://www.kaggle.com/code/themlphdstudent/sign-classification-using-tl-incepti
 https://www.kaggle.com/datasets/ayuraj/asl-dataset
 ### Large dataset
 https://www.kaggle.com/datasets/grassknoted/asl-alphabet
+
+A smaple report that use transfer learning in seed classification
+http://noiselab.ucsd.edu/ECE228-2020/projects/Report/30Report.pdf

@@ -1,14 +1,20 @@
 # For webcam input:
 
+import tensorflow as tf
 import mediapipe as mp
 import pandas as pd
 import seaborn as sns
 import numpy as np
 import os
 import cv2
-from keras.applications.mobilenet_v2 import MobileNetV2
 from keras.applications.mobilenet_v2 import preprocess_input
 from keras.applications.mobilenet_v2 import decode_predictions
+from keras.applications.mobilenet_v3 import MobileNetV3
+from keras.preprocessing import image
+from keras.applications.vgg16 import preprocess_input
+from keras.models import Model
+from keras.optimizers import Adam
+from keras.layers import Dense, Dropout, Flatten
 
 def capture_gesture():
   """ Capture the ASL hand gesture
@@ -85,7 +91,7 @@ def capture_gesture():
 def data_processing():
   """ Process Data for training and data visualization
   """      
-  path = './asl_dataset'
+  path = '../../asl_dataset'
   names = []
   nums = []
   data = {'Name of class':[],'Number of samples':[]}
@@ -100,6 +106,25 @@ def data_processing():
   df = pd.DataFrame(data)
   sns.barplot(x=df['Name of class'],y=df['Number of samples'])
 
+  image_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale = 1./255 , rotation_range=20,
+                                                                width_shift_range=0.2,
+                                                                height_shift_range=0.2,
+                                                                horizontal_flip=True, validation_split=0.2)
+  
+  train_dg = image_datagen.flow_from_directory(
+        path,
+        subset='training',
+        target_size=(224 , 224),
+        batch_size=32)
+
+  val_dg = image_datagen.flow_from_directory(
+        path,
+        subset='validation',
+        target_size=(224 , 224),
+        batch_size=32 )
+
+  return (train_dg, val_dg)
+
 def preprocess_image(hand_crop):
   """Preprocess Image
   Args:
@@ -112,12 +137,70 @@ def preprocess_image(hand_crop):
   data = preprocess_input(data)
   return data
 
-def train_model():
-  model = MobileNetV2(weights='imagenet')
+def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_tune=0):
+    """
+    Compiles a model integrated with VGG16 pretrained layers
+    
+    input_shape: tuple - the shape of input images (width, height, channels)
+    n_classes: int - number of classes for the output layer
+    optimizer: string - instantiated optimizer to use for training. Defaults to 'RMSProp'
+    fine_tune: int - The number of pre-trained layers to unfreeze.
+                If set to 0, all pretrained layers will freeze during training
+    """
+    
+    # Pretrained convolutional layers are loaded using the Imagenet weights.
+    # Include_top is set to False, in order to exclude the model's fully-connected layers.
+    conv_base = MobileNetV3(include_top=False,
+                     weights='imagenet', 
+                     input_shape=input_shape)
+    
+    # Defines how many layers to freeze during training.
+    # Layers in the convolutional base are switched from trainable to non-trainable
+    # depending on the size of the fine-tuning parameter.
+    if fine_tune > 0:
+        for layer in conv_base.layers[:-fine_tune]:
+            layer.trainable = False
+    else:
+        for layer in conv_base.layers:
+            layer.trainable = False
+
+    # Create a new 'top' of the model (i.e. fully-connected layers).
+    # This is 'bootstrapping' a new top_model onto the pretrained layers.
+    top_model = conv_base.output
+    top_model = Flatten(name="flatten")(top_model)
+    top_model = Dense(4096, activation='relu')(top_model)
+    top_model = Dense(1072, activation='relu')(top_model)
+    top_model = Dropout(0.2)(top_model)
+    output_layer = Dense(n_classes, activation='softmax')(top_model)
+    
+    # Group the convolutional base and new fully-connected layers into a Model object.
+    model = Model(inputs=conv_base.input, outputs=output_layer)
+
+    # Compiles the model for training.
+    model.compile(optimizer=optimizer, 
+                  loss='categorical_crossentropy',
+                  metrics=['accuracy'])
+    
+    return model
+
+def train_model(train_dg, val_dg, image_shape, batch_size, epochs):
+  optim_1 = Adam(learning_rate=0.001)
+  model = create_model_mobileNetv3((32, 32, 3), 36, optimizer=optim_1)
+  history = model.fit(train_dg,
+                    batch_size=batch_size,
+                    epochs=epochs,
+                    verbose=1,
+                    validation_data=val_dg)
+
   return model
 
-model = train_model()
-# model.summary()  # Uncoomment this to print a long summary!
+
+batch_size = 128
+epochs = 20
+image_shape = (32, 32, 3)
+(train_dg, val_dg) = data_processing()
+model = train_model(train_dg, val_dg, image_shape, batch_size, epochs)
+model.summary()  # Uncoomment this to print a long summary!
 hand_crop = capture_gesture()
 data = preprocess_image(hand_crop)
 predictions = model.predict(data)
