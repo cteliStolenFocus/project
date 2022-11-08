@@ -1,4 +1,7 @@
-# For webcam input:
+# 
+# Group-2 Final Project
+#
+#
 
 import tensorflow as tf
 import mediapipe as mp
@@ -7,14 +10,16 @@ import seaborn as sns
 import numpy as np
 import os
 import cv2
-from keras.applications.mobilenet_v2 import preprocess_input
-from keras.applications.mobilenet_v2 import decode_predictions
-from keras.applications.mobilenet_v3 import MobileNetV3
+from keras.applications.mobilenet_v3 import preprocess_input
+from keras.applications.mobilenet_v3 import decode_predictions
+from keras.applications.mobilenet_v3 import MobileNetV3Large
 from keras.preprocessing import image
-from keras.applications.vgg16 import preprocess_input
 from keras.models import Model
 from keras.optimizers import Adam
 from keras.layers import Dense, Dropout, Flatten
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from sklearn.model_selection import train_test_split
+
 
 def capture_gesture():
   """ Capture the ASL hand gesture
@@ -88,42 +93,42 @@ def capture_gesture():
 
   return hand_crop
 
-def data_processing():
+def data_processing(path, img_width, img_height):
   """ Process Data for training and data visualization
   """      
-  path = '../../asl_dataset'
-  names = []
-  nums = []
-  data = {'Name of class':[],'Number of samples':[]}
+  train_folder = path
+  y_col = 'label'
+  x_col = 'path'
+  all_data = []
+  for folder in os.listdir(train_folder):
+    
+    label_folder = os.path.join(train_folder, folder)
+    onlyfiles = [{'label':folder,'path':os.path.join(label_folder, f)} for f in os.listdir(label_folder) if os.path.isfile(os.path.join(label_folder, f))]
+    all_data += onlyfiles
+  data_df = pd.DataFrame(all_data)
 
-  for i in os.listdir(path):
-      nums.append(len(os.listdir(path+'/'+i)))
-      names.append(i)
+  x_train,x_holdout = train_test_split(data_df, test_size= 0.10, random_state=42,stratify=data_df[['label']])
+  x_train,x_test = train_test_split(x_train, test_size= 0.20, random_state=42,stratify=x_train[['label']])
 
-  data['Name of class']+=names
-  data['Number of samples']+=nums
+  train_datagen = ImageDataGenerator(
+    rescale = 1/255.0,
+    preprocessing_function = tf.keras.applications.mobilenet_v2.preprocess_input
+  )
 
-  df = pd.DataFrame(data)
-  sns.barplot(x=df['Name of class'],y=df['Number of samples'])
+  train_generator = train_datagen.flow_from_dataframe(
+    dataframe=x_train,x_col=x_col, y_col=y_col,
+    target_size=(img_width, img_height),class_mode='categorical', batch_size=batch_size,
+    shuffle=False
+  )
 
-  image_datagen = tf.keras.preprocessing.image.ImageDataGenerator(rescale = 1./255 , rotation_range=20,
-                                                                width_shift_range=0.2,
-                                                                height_shift_range=0.2,
-                                                                horizontal_flip=True, validation_split=0.2)
-  
-  train_dg = image_datagen.flow_from_directory(
-        path,
-        subset='training',
-        target_size=(224 , 224),
-        batch_size=32)
+  validation_datagen = ImageDataGenerator(rescale = 1/255.0)
+  validation_generator = validation_datagen.flow_from_dataframe(
+    dataframe=x_test, x_col=x_col, y_col=y_col,
+    target_size=(img_width, img_height), class_mode='categorical', batch_size=batch_size,
+    shuffle=False
+  )
 
-  val_dg = image_datagen.flow_from_directory(
-        path,
-        subset='validation',
-        target_size=(224 , 224),
-        batch_size=32 )
-
-  return (train_dg, val_dg)
+  return (train_generator, validation_generator)
 
 def preprocess_image(hand_crop):
   """Preprocess Image
@@ -150,9 +155,10 @@ def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_t
     
     # Pretrained convolutional layers are loaded using the Imagenet weights.
     # Include_top is set to False, in order to exclude the model's fully-connected layers.
-    conv_base = MobileNetV3(include_top=False,
+    conv_base = MobileNetV3Large(include_top=False,
                      weights='imagenet', 
-                     input_shape=input_shape)
+                     input_shape=input_shape,
+                     pooling='avg')
     
     # Defines how many layers to freeze during training.
     # Layers in the convolutional base are switched from trainable to non-trainable
@@ -185,7 +191,7 @@ def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_t
 
 def train_model(train_dg, val_dg, image_shape, batch_size, epochs):
   optim_1 = Adam(learning_rate=0.001)
-  model = create_model_mobileNetv3((32, 32, 3), 36, optimizer=optim_1)
+  model = create_model_mobileNetv3(image_shape, batch_size, optimizer=optim_1)
   history = model.fit(train_dg,
                     batch_size=batch_size,
                     epochs=epochs,
@@ -194,23 +200,35 @@ def train_model(train_dg, val_dg, image_shape, batch_size, epochs):
 
   return model
 
+def predict_model(model, data):
+  # ASL Data Prediction
+  predictions = model.predict(data)
+  print('Shape: {}'.format(predictions.shape))
+  output_neuron = np.argmax(predictions[0])
+  print('Most active neuron: {} ({:.2f}%)'.format(
+      output_neuron,
+      100 * predictions[0][output_neuron]
+  ))
 
+  for name, desc, score in decode_predictions(predictions)[0]:
+      print('- {} ({:.2f}%%)'.format(desc, 100 * score))
+
+
+# Globals 
 batch_size = 128
 epochs = 20
 image_shape = (32, 32, 3)
-(train_dg, val_dg) = data_processing()
+
+# Data processing
+(train_dg, val_dg) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
+
+# Model Training
 model = train_model(train_dg, val_dg, image_shape, batch_size, epochs)
 model.summary()  # Uncoomment this to print a long summary!
+
+# ASL Gesture Capture
 hand_crop = capture_gesture()
 data = preprocess_image(hand_crop)
-predictions = model.predict(data)
-print('Shape: {}'.format(predictions.shape))
 
-output_neuron = np.argmax(predictions[0])
-print('Most active neuron: {} ({:.2f}%)'.format(
-    output_neuron,
-    100 * predictions[0][output_neuron]
-))
-
-for name, desc, score in decode_predictions(predictions)[0]:
-    print('- {} ({:.2f}%%)'.format(desc, 100 * score))
+# ASL Model Predcition
+predict_model(model, data)
