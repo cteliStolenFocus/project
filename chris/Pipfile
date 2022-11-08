@@ -11,6 +11,7 @@ tensorflow = "*"
 openssl-python = "*"
 seaborn = "*"
 ipython = "*"
+sklearn = "*"
 
 [dev-packages]
 
