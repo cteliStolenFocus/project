@@ -189,9 +189,9 @@ def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_t
     
     return model
 
-def train_model(train_dg, val_dg, image_shape, batch_size, epochs):
+def train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs):
   optim_1 = Adam(learning_rate=0.001)
-  model = create_model_mobileNetv3(image_shape, batch_size, optimizer=optim_1)
+  model = create_model_mobileNetv3(image_shape, n_classes, optimizer=optim_1)
   history = model.fit(train_dg,
                     batch_size=batch_size,
                     epochs=epochs,
@@ -218,12 +218,13 @@ def predict_model(model, data):
 batch_size = 128
 epochs = 20
 image_shape = (32, 32, 3)
+n_classes = 36
 
 # Data processing
 (train_dg, val_dg) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
 
 # Model Training
-model = train_model(train_dg, val_dg, image_shape, batch_size, epochs)
+model = train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs)
 model.summary()  # Uncoomment this to print a long summary!
 
 # ASL Gesture Capture
