@@ -12,9 +12,7 @@ import os
 import sys
 import cv2
 import logging
-from keras.applications.mobilenet_v3 import preprocess_input
-from keras.applications.mobilenet_v3 import decode_predictions
-from keras.applications.mobilenet_v3 import MobileNetV3Large
+from tensorflow.keras.applications import ResNet50V2
 from keras.preprocessing import image
 from keras.models import Model
 from keras.optimizers import Adam
@@ -121,8 +119,7 @@ def data_processing(path, img_width, img_height):
   x_train,x_test = train_test_split(x_train, test_size= 0.20, random_state=42,stratify=x_train[['label']])
 
   train_datagen = ImageDataGenerator(
-    rescale = 1/255.0,
-    preprocessing_function = tf.keras.applications.mobilenet_v2.preprocess_input
+    rescale = 1/255.0
   )
 
   train_generator = train_datagen.flow_from_dataframe(
@@ -149,10 +146,9 @@ def preprocess_image(hand_crop, image_shape):
   cv2.imwrite('./hand_gesture_cropped.png', hand_crop)
   data = np.empty((1,image_shape[0],image_shape[1],image_shape[2]))
   data[0] = hand_crop
-  data = preprocess_input(data)
   return data
 
-def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_tune=0):
+def create_model(input_shape, n_classes, optimizer='rmsprop', fine_tune=0):
     """
     Compiles a model integrated with VGG16 pretrained layers
     
@@ -165,7 +161,7 @@ def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_t
     
     # Pretrained convolutional layers are loaded using the Imagenet weights.
     # Include_top is set to False, in order to exclude the model's fully-connected layers.
-    conv_base = MobileNetV3Large(include_top=False,
+    conv_base = ResNet50V2(include_top=False,
                      weights='imagenet', 
                      input_shape=input_shape,
                      pooling='avg')
@@ -182,7 +178,8 @@ def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_t
 
     # Create a new 'top' of the model (i.e. fully-connected layers).
     # This is 'bootstrapping' a new top_model onto the pretrained layers.
-    top_model = conv_base.output
+    # top_model = conv_base.output
+    top_model = conv_base.output 
     top_model = Flatten(name="flatten")(top_model)
     top_model = Dense(4096, activation='relu')(top_model)
     top_model = Dense(1072, activation='relu')(top_model)
@@ -201,7 +198,7 @@ def create_model_mobileNetv3(input_shape, n_classes, optimizer='rmsprop', fine_t
 
 def train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs):
   optim_1 = Adam(learning_rate=0.001)
-  model = create_model_mobileNetv3(image_shape, n_classes, optimizer=optim_1)
+  model = create_model(image_shape, n_classes, optimizer=optim_1)
   history = model.fit(train_dg,
                     batch_size=batch_size,
                     epochs=epochs,
@@ -224,8 +221,8 @@ def predict_model(model, data, asl_classes):
 
 # Globals 
 batch_size = 128
-epochs = 20
-image_shape = (32, 32, 3)
+epochs = 2
+image_shape = (50, 50, 3)
 n_classes = 36
 
 # Setup Logging
