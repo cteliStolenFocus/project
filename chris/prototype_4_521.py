@@ -20,8 +20,32 @@ from keras.layers import Dense, Dropout, Flatten
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.model_selection import train_test_split
 
+def preprocess_image(hand_crop, image_shape):
+  """Preprocess Image
+  Args:
+      hand_crop (image): 
+  """
+  hand_crop = cv2.resize(hand_crop,(image_shape[0],image_shape[1]))
+  #cv2.imwrite('./hand_gesture_cropped.png', hand_crop)
+  data = np.empty((1,image_shape[0],image_shape[1],image_shape[2]))
+  data[0] = hand_crop
+  return data
 
-def capture_gesture():
+
+def predict_model(model, data, asl_classes):
+  # ASL Data Prediction
+  predictions = model.predict(data)
+  print('Shape: {}'.format(predictions.shape))
+  output_neuron = np.argmax(predictions[0])
+  print('Most active neuron: {} ({:.2f}%)'.format(
+      output_neuron,
+      100 * predictions[0][output_neuron]
+  ))
+  logging.info('Predicted class:' +   str(asl_classes[output_neuron]))
+
+  return str(asl_classes[output_neuron])
+
+def capture_gesture(image_shape, model, asl_classes):
   """ Capture the ASL hand gesture
 
   Returns:
@@ -61,7 +85,7 @@ def capture_gesture():
       # Draw the hand annotations on the image.
       image.flags.writeable = True
       image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-      print(results.multi_hand_world_landmarks)
+      hand_found = False
       if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
           # Get bounding rectangle    
@@ -82,20 +106,44 @@ def capture_gesture():
           cv2.rectangle(image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
           hand_crop = image[y_min:y_max, x_min:x_max]
           hand_crop = cv2.flip(hand_crop,1)
-          cv2.imwrite('./hand_gesture.png', hand_crop)
+          hand_found = True
+          #cv2.imwrite('./hand_gesture.png', hand_crop)
           mp_drawing.draw_landmarks(
               image,
               hand_landmarks,
               mp_hands.HAND_CONNECTIONS,
               mp_drawing_styles.get_default_hand_landmarks_style(),
               mp_drawing_styles.get_default_hand_connections_style())
+
+      if hand_found:
+        data = preprocess_image(hand_crop, image_shape)
+
+        # ASL Model Predcition
+        logging.info('Gesture Prediction')
+        predicted_character = predict_model(model, data, asl_classes)
+
+        font                   = cv2.FONT_HERSHEY_SIMPLEX
+        bottomLeftCornerOfText = (10,50)
+        fontScale              = 1
+        fontColor              = (255,255,255)
+        lineType               = 2
+
+        image = cv2.flip(image, 1)
+        cv2.putText(image,'Predicted character:' + predicted_character, 
+            bottomLeftCornerOfText, 
+            font, 
+            fontScale,
+            fontColor,
+            lineType)
+
       # Flip the image horizontally for a selfie-view display.
-      cv2.imshow('MediaPipe Hands', cv2.flip(image, 1))
+      cv2.imshow('Group-2 ASL', image)
       key = cv2.waitKey(5)
       # ESC or 'q'
       if key == 27 or key == 113:
         cv2.destroyAllWindows()
         break
+
   cap.release()
 
   return hand_crop
@@ -115,11 +163,16 @@ def data_processing(path, img_width, img_height):
     all_data += onlyfiles
   data_df = pd.DataFrame(all_data)
 
-  x_train,x_holdout = train_test_split(data_df, test_size= 0.10, random_state=42,stratify=data_df[['label']])
-  x_train,x_test = train_test_split(x_train, test_size= 0.20, random_state=42,stratify=x_train[['label']])
+  x_train,x_test = train_test_split(data_df, test_size= 0.20, random_state=42,stratify=data_df[['label']])
 
   train_datagen = ImageDataGenerator(
-    rescale = 1/255.0
+    rotation_range=30,
+    width_shift_range=0.2,
+    height_shift_range=0.2,
+    horizontal_flip=True,
+    fill_mode="nearest",
+    rescale = 1/255.0,
+    shear_range=0.2,
   )
 
   train_generator = train_datagen.flow_from_dataframe(
@@ -137,18 +190,7 @@ def data_processing(path, img_width, img_height):
 
   return (train_generator, validation_generator, asl_classes)
 
-def preprocess_image(hand_crop, image_shape):
-  """Preprocess Image
-  Args:
-      hand_crop (image): 
-  """
-  hand_crop = cv2.resize(hand_crop,(image_shape[0],image_shape[1]))
-  cv2.imwrite('./hand_gesture_cropped.png', hand_crop)
-  data = np.empty((1,image_shape[0],image_shape[1],image_shape[2]))
-  data[0] = hand_crop
-  return data
-
-def create_model(input_shape, n_classes, optimizer='rmsprop', fine_tune=0):
+def create_model(input_shape, n_classes, optimizer='adam', fine_tune=0):
     """
     Compiles a model integrated with VGG16 pretrained layers
     
@@ -207,18 +249,6 @@ def train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs):
 
   return model
 
-def predict_model(model, data, asl_classes):
-  # ASL Data Prediction
-  predictions = model.predict(data)
-  print('Shape: {}'.format(predictions.shape))
-  output_neuron = np.argmax(predictions[0])
-  print('Most active neuron: {} ({:.2f}%)'.format(
-      output_neuron,
-      100 * predictions[0][output_neuron]
-  ))
-  logging.info('Predicted class:' +   str(asl_classes[output_neuron]))
-
-
 # Globals 
 batch_size = 128
 epochs = 2
@@ -231,22 +261,29 @@ logging.basicConfig(filename ='group2-final.log',
                     level = logging.INFO)
 logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 # Data processing
-logging.info('Data Processing')
-(train_dg, val_dg, asl_classes) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
 
 # Model Training
-logging.info('Model Training')
-model = train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs)
-model.summary()  # Uncoomment this to print a long summary!
+retrain_model = input('Retrain data?(Y/N)')
+if retrain_model == 'Y' or retrain_model == 'y':
+  logging.info('Data Processing')
+  (train_dg, val_dg, asl_classes) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
+  logging.info('Model Training')
+  model = train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs)
+  model.summary()  # Uncoomment this to print a long summary!
+  model.save('asl_group2.h5')
+else:
+  digit_0 = '0'
+  digit_classes = []    
+  digit_classes = [(chr(ord(digit_0)+i)) for i in range(10)]
+  letter_a ='a'
+  letter_classes = []
+  # starting from the ASCII value of 'a' and keep increasing the 
+  # value by i.
+  letter_classes =[(chr(ord(letter_a)+i)) for i in range(26)]
+  asl_classes = digit_classes + letter_classes
+  print(asl_classes)
+  model = tf.keras.models.load_model('asl_group2.h5')
 
 # ASL Gesture Capture
-do_more = ''
-while do_more != 'q':
-  logging.info('Hand Gesture Capture')
-  hand_crop = capture_gesture()
-  data = preprocess_image(hand_crop, image_shape)
-
-  # ASL Model Predcition
-  logging.info('Gesture Prediction')
-  predict_model(model, data, asl_classes)
-  do_mode = input('Read another gesture(q to quit)')
+logging.info('Hand Gesture Capture')
+capture_gesture(image_shape, model, asl_classes)
