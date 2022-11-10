@@ -9,7 +9,9 @@ import pandas as pd
 import seaborn as sns
 import numpy as np
 import os
+import sys
 import cv2
+import logging
 from keras.applications.mobilenet_v3 import preprocess_input
 from keras.applications.mobilenet_v3 import decode_predictions
 from keras.applications.mobilenet_v3 import MobileNetV3Large
@@ -32,7 +34,14 @@ def capture_gesture():
   mp_drawing_styles = mp.solutions.drawing_styles
   mp_hands = mp.solutions.hands
 
-  cap = cv2.VideoCapture(0)
+  logging.info('Setting up Camera')
+  width=1280
+  height=720
+  cap=cv2.VideoCapture(0,cv2.CAP_DSHOW)
+  cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
+  cap.set(cv2.CAP_PROP_FRAME_HEIGHT,height)
+  cap.set(cv2.CAP_PROP_FPS, 30)
+  logging.info('Opening mediapipe')
   with mp_hands.Hands(
       model_complexity=0,
       min_detection_confidence=0.5,
@@ -100,8 +109,9 @@ def data_processing(path, img_width, img_height):
   y_col = 'label'
   x_col = 'path'
   all_data = []
+  asl_classes = []
   for folder in os.listdir(train_folder):
-    
+    asl_classes.append(folder)    
     label_folder = os.path.join(train_folder, folder)
     onlyfiles = [{'label':folder,'path':os.path.join(label_folder, f)} for f in os.listdir(label_folder) if os.path.isfile(os.path.join(label_folder, f))]
     all_data += onlyfiles
@@ -128,16 +138,16 @@ def data_processing(path, img_width, img_height):
     shuffle=False
   )
 
-  return (train_generator, validation_generator)
+  return (train_generator, validation_generator, asl_classes)
 
-def preprocess_image(hand_crop):
+def preprocess_image(hand_crop, image_shape):
   """Preprocess Image
   Args:
       hand_crop (image): 
   """
-  hand_crop = cv2.resize(hand_crop,(224,224))
+  hand_crop = cv2.resize(hand_crop,(image_shape[0],image_shape[1]))
   cv2.imwrite('./hand_gesture_cropped.png', hand_crop)
-  data = np.empty((1,224,224,3))
+  data = np.empty((1,image_shape[0],image_shape[1],image_shape[2]))
   data[0] = hand_crop
   data = preprocess_input(data)
   return data
@@ -200,7 +210,7 @@ def train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs):
 
   return model
 
-def predict_model(model, data):
+def predict_model(model, data, asl_classes):
   # ASL Data Prediction
   predictions = model.predict(data)
   print('Shape: {}'.format(predictions.shape))
@@ -209,9 +219,7 @@ def predict_model(model, data):
       output_neuron,
       100 * predictions[0][output_neuron]
   ))
-
-  for name, desc, score in decode_predictions(predictions)[0]:
-      print('- {} ({:.2f}%%)'.format(desc, 100 * score))
+  logging.info('Predicted class:' +   str(asl_classes[output_neuron]))
 
 
 # Globals 
@@ -220,16 +228,28 @@ epochs = 20
 image_shape = (32, 32, 3)
 n_classes = 36
 
+# Setup Logging
+# Configure the logging system
+logging.basicConfig(filename ='group2-final.log',
+                    level = logging.INFO)
+logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 # Data processing
-(train_dg, val_dg) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
+logging.info('Data Processing')
+(train_dg, val_dg, asl_classes) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
 
 # Model Training
+logging.info('Model Training')
 model = train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs)
 model.summary()  # Uncoomment this to print a long summary!
 
 # ASL Gesture Capture
-hand_crop = capture_gesture()
-data = preprocess_image(hand_crop)
+do_more = ''
+while do_more != 'q':
+  logging.info('Hand Gesture Capture')
+  hand_crop = capture_gesture()
+  data = preprocess_image(hand_crop, image_shape)
 
-# ASL Model Predcition
-predict_model(model, data)
+  # ASL Model Predcition
+  logging.info('Gesture Prediction')
+  predict_model(model, data, asl_classes)
+  do_mode = input('Read another gesture(q to quit)')

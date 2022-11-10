@@ -12,6 +12,8 @@ openssl-python = "*"
 seaborn = "*"
 ipython = "*"
 sklearn = "*"
+scikit-learn = "*"
+ffmpeg = "*"
 
 [dev-packages]
 
