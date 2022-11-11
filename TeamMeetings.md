@@ -21,3 +21,10 @@
 ## 2022/11/06
 - Create Template for project report
 - Prototyped ASL character detection
+
+## 2022/11/11
+- Created the framework for the project
+- Divided tasking for team
+- Olympia (inception, dense, xception)
+- Chris (EfficientNetB2, B5, B7)
+- Prakash (ResNetXt-101, SENet, Inception-ResNet-V2)
