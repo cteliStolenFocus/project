@@ -19,7 +19,71 @@ from keras.optimizers import Adam
 from keras.layers import Dense, Dropout, Flatten
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from sklearn.model_selection import train_test_split
+import uuid
 
+threshold = 60  # binary threshold
+blurValue = 41  # GaussianBlur parameter
+bgSubThreshold = 50
+learningRate = 0
+
+def draw_bounding_rect(image, brect):
+  # Outer rectangle
+  cv2.rectangle(image, (brect[0], brect[1]), (brect[2], brect[3]),
+    (0, 0, 0), 1)
+
+  return image
+
+def calc_bounding_rect(image, landmarks):
+    image_width, image_height = image.shape[1], image.shape[0]
+
+    landmark_array = np.empty((0, 2), int)
+
+    for _, landmark in enumerate(landmarks.landmark):
+        landmark_x = min(int(landmark.x * image_width), image_width - 1)
+        landmark_y = min(int(landmark.y * image_height), image_height - 1)
+
+        landmark_point = [np.array((landmark_x, landmark_y))]
+
+        landmark_array = np.append(landmark_array, landmark_point, axis=0)
+
+    x, y, w, h = cv2.boundingRect(landmark_array)
+    # Pad the bounding rect
+    x = x - 40
+    y = y - 40
+    w = w + 80
+    h = h + 80
+    
+
+    return [x, y, x + w, y + h]
+
+def remove_background(frame, bgSubThreshold, learningRate):
+    bgModel = cv2.createBackgroundSubtractorMOG2(0, bgSubThreshold)    
+    fgmask = bgModel.apply(frame, learningRate=learningRate)
+    kernel = np.ones((3, 3), np.uint8)
+    fgmask = cv2.erode(fgmask, kernel, iterations=1)
+    res = cv2.bitwise_and(frame, frame, mask=fgmask)
+    return res
+
+def pre_process_image(image, image_shape):
+  # initializing subtractor 
+  # applying on each frame
+  unique_filename = str(uuid.uuid4())
+
+  frame_cropped = remove_background(image, bgSubThreshold, learningRate)
+  gray = cv2.cvtColor(frame_cropped, cv2.COLOR_BGR2GRAY)
+  blur = cv2.GaussianBlur(gray, (blurValue, blurValue), 0)
+
+  ret, th = cv2.threshold(blur, threshold, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+  hand_crop = cv2.resize(th,(image_shape[0],image_shape[1]))
+  #th = cv2.adaptiveThreshold(gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 115, 1)
+  #cv2.imwrite('capture-' + unique_filename + ".png",th)
+
+  # show the output image
+  cv2.imshow("Image", hand_crop)
+  data = np.empty((1,image_shape[0],image_shape[1],image_shape[2]))
+  data[0] = hand_crop
+  return data
+  
 def preprocess_image(hand_crop, image_shape):
   """Preprocess Image
   Args:
@@ -89,52 +153,40 @@ def capture_gesture(image_shape, model, asl_classes):
       if results.multi_hand_landmarks:
         for hand_landmarks in results.multi_hand_landmarks:
           # Get bounding rectangle    
-          x_max = 0
-          y_max = 0
-          x_min = w
-          y_min = h
-          for lm in hand_landmarks.landmark:
-            x, y = int(lm.x * w), int(lm.y * h)
-            if x > x_max:
-              x_max = x + 25
-            if x < x_min:
-              x_min = x - 25 
-            if y > y_max:
-              y_max = y + 25
-            if y < y_min:
-              y_min = y - 25 
-          cv2.rectangle(image, (x_min, y_min), (x_max, y_max), (0, 255, 0), 2)
-          hand_crop = image[y_min:y_max, x_min:x_max]
+          # Bounding box calculation
+          brect = calc_bounding_rect(image, hand_landmarks)
+          hand_crop = image[brect[1]:brect[3], brect[0]:brect[2]]
+          image = draw_bounding_rect(image, brect)
           hand_crop = cv2.flip(hand_crop,1)
           hand_found = True
           #cv2.imwrite('./hand_gesture.png', hand_crop)
-          mp_drawing.draw_landmarks(
-              image,
-              hand_landmarks,
-              mp_hands.HAND_CONNECTIONS,
-              mp_drawing_styles.get_default_hand_landmarks_style(),
-              mp_drawing_styles.get_default_hand_connections_style())
+          #mp_drawing.draw_landmarks(
+          #    image,
+          #    hand_landmarks,
+          #    mp_hands.HAND_CONNECTIONS,
+          #    mp_drawing_styles.get_default_hand_landmarks_style(),
+          #    mp_drawing_styles.get_default_hand_connections_style())
 
-      if hand_found:
-        data = preprocess_image(hand_crop, image_shape)
+        if hand_found:
+          data = preprocess_image(hand_crop, image_shape)
 
-        # ASL Model Predcition
-        logging.info('Gesture Prediction')
-        predicted_character = predict_model(model, data, asl_classes)
+          # ASL Model Predcition
+          logging.info('Gesture Prediction')
+          predicted_character = predict_model(model, data, asl_classes)
 
-        font                   = cv2.FONT_HERSHEY_SIMPLEX
-        bottomLeftCornerOfText = (10,50)
-        fontScale              = 1
-        fontColor              = (255,255,255)
-        lineType               = 2
+          font                   = cv2.FONT_HERSHEY_SIMPLEX
+          bottomLeftCornerOfText = (10,50)
+          fontScale              = 1
+          fontColor              = (255,255,255)
+          lineType               = 2
 
-        image = cv2.flip(image, 1)
-        cv2.putText(image,'Predicted character:' + predicted_character, 
-            bottomLeftCornerOfText, 
-            font, 
-            fontScale,
-            fontColor,
-            lineType)
+          #image = cv2.flip(image, 1)
+          cv2.putText(image,'Predicted character:' + predicted_character, 
+              bottomLeftCornerOfText, 
+              font, 
+              fontScale,
+              fontColor,
+              lineType)
 
       # Flip the image horizontally for a selfie-view display.
       cv2.imshow('Group-2 ASL', image)
@@ -252,7 +304,7 @@ def train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs):
 # Globals 
 batch_size = 128
 epochs = 2
-image_shape = (50, 50, 3)
+image_shape = (224, 224, 3)
 n_classes = 36
 
 # Setup Logging
@@ -266,7 +318,7 @@ logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 retrain_model = input('Retrain data?(Y/N)')
 if retrain_model == 'Y' or retrain_model == 'y':
   logging.info('Data Processing')
-  (train_dg, val_dg, asl_classes) = data_processing('../../asl_dataset',image_shape[0], image_shape[1])
+  (train_dg, val_dg, asl_classes) = data_processing('../../data_set_small/asl_dataset',image_shape[0], image_shape[1])
   logging.info('Model Training')
   model = train_model(train_dg, val_dg, image_shape, n_classes, batch_size, epochs)
   model.summary()  # Uncoomment this to print a long summary!
