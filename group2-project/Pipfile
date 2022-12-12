@@ -6,13 +6,16 @@ name = "pypi"
 [packages]
 streamlit = "*"
 mediapipe = "*"
-opencv-python = "*"
 streamlit-webrtc = "*"
 av = "*"
 utils = "*"
 numpy = "*"
 opencv-python-headless = "*"
+opencv-python = "*"
+imutils = "*"
 tensorflow = "*"
+ipython = "*"
+matplotlib = "*"
 
 [dev-packages]
 
